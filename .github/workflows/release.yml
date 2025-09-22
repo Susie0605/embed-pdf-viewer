@@ -1,26 +1,22 @@
 name: Release
 
-# 1️⃣ 何时运行
-# ──────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [main]          # 仅在代码合并到main后运行
-    paths:                    # 忽略仅修改网站/文档的提交
+    branches: [main]
+    paths:
       - "packages/**"
       - ".changeset/**"
       - "pnpm-lock.yaml"
-  workflow_dispatch: {}       # 允许手动触发
+  workflow_dispatch: {}
 
-# 2️⃣ 每次只运行一个发布任务
-# ──────────────────────────────────────────────────────────────────────
 concurrency:
   group: release
   cancel-in-progress: false
 
 permissions:
-  contents: write             # 创建标签、发布和版本更新PR
-  id-token: write             # 用于npm发布的来源验证
-  pull-requests: write         # 创建版本更新PR
+  contents: write
+  id-token: write
+  pull-requests: write
   
 env:
   CI: true
@@ -33,52 +29,64 @@ jobs:
       NPM_TOKEN:    ${{ secrets.NPM_TOKEN }}
 
     steps:
-      # ─── 检出代码仓库 ────────────────────────────────────────
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整历史以便正确生成变更日志
+          fetch-depth: 0
 
-      # ─── 设置PNPM 10.4.0 ───────────
       - uses: pnpm/action-setup@v4
         with:
           version: 10.4.0
           run_install: false
 
-      # ─── 设置Node并缓存pnpm存储 ──────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
-      # ─── 安装依赖 (根目录 + 工作区) ──────────────────────────
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:packages
 
-      # ─── 版本更新PR和准备发布 (Changesets处理) ──────────────
-      - name: 版本更新和准备发布
+      # 收集构建产物并压缩
+      - name: 准备发布资产
+        run: |
+          # 创建临时目录存放发布资产
+          mkdir -p release-assets
+          
+          # 复制所有构建产物到临时目录
+          for pkg in packages/*; do
+            if [ -d "$pkg/dist" ]; then
+              pkg_name=$(basename "$pkg")
+              # 压缩每个包的dist目录
+              zip -r "release-assets/$pkg_name-dist.zip" "$pkg/dist"
+              tar -czf "release-assets/$pkg_name-dist.tar.gz" -C "$pkg" dist
+            fi
+          done
+          
+          # 显示收集的资产列表
+          echo "准备发布的资产:"
+          ls -la release-assets/
+
+      - name: 版本更新
         id: changesets
         uses: changesets/action@v1
         with:
           commit: "chore: version packages"
           title:  "chore: version packages"
-          # 仅版本化，不直接发布到npm
+          version: pnpm ci:version
           publish: echo "准备发布到GitHub Releases"
-          version: pnpm ci:version  # 确保在package.json中定义此脚本
 
-      # ─── 如果有新版本，创建GitHub Release ──────────────
+      # 创建GitHub Release并上传资产
       - name: 创建GitHub Release
         if: steps.changesets.outputs.published == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          # 使用Changesets生成的版本号作为标签
           tag_name: ${{ steps.changesets.outputs.tag }}
-          # 从CHANGELOG.md获取发布说明
           body_path: CHANGELOG.md
-          # 上传构建产物
+          # 上传所有准备好的资产
           files: |
-            packages/*/dist/*.tar.gz
-            packages/*/dist/*.zip
+            release-assets/*.zip
+            release-assets/*.tar.gz
           draft: false
           prerelease: false
     

@@ -17,7 +17,7 @@ permissions:
   contents: write
   id-token: write
   pull-requests: write
-  
+
 env:
   CI: true
 
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      NPM_TOKEN:    ${{ secrets.NPM_TOKEN }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -50,43 +50,38 @@ jobs:
       # 收集构建产物并压缩
       - name: 准备发布资产
         run: |
-          # 创建临时目录存放发布资产
           mkdir -p release-assets
-          
-          # 复制所有构建产物到临时目录
           for pkg in packages/*; do
             if [ -d "$pkg/dist" ]; then
               pkg_name=$(basename "$pkg")
-              # 压缩每个包的dist目录
               zip -r "release-assets/$pkg_name-dist.zip" "$pkg/dist"
               tar -czf "release-assets/$pkg_name-dist.tar.gz" -C "$pkg" dist
             fi
           done
-          
-          # 显示收集的资产列表
           echo "准备发布的资产:"
           ls -la release-assets/
 
-      - name: 版本更新
+      # 版本更新 + 发布到 npm（可选）
+      - name: 版本更新 & 发布
         id: changesets
         uses: changesets/action@v1
         with:
           commit: "chore: version packages"
-          title:  "chore: version packages"
+          title: "chore: version packages"
           version: pnpm ci:version
-          publish: echo "准备发布到GitHub Releases"
+          publish: pnpm ci:publish   # 这里会真正执行 npm publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # 创建GitHub Release并上传资产
-      - name: 创建GitHub Release
-        if: steps.changesets.outputs.published == 'true'
+      # 创建 GitHub Release 并上传资产
+      - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.changesets.outputs.tag }}
+          tag_name: ${{ steps.changesets.outputs.tag || github.ref_name }}
           body_path: CHANGELOG.md
-          # 上传所有准备好的资产
           files: |
             release-assets/*.zip
             release-assets/*.tar.gz
           draft: false
           prerelease: false
-    

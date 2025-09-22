@@ -61,18 +61,7 @@ jobs:
           echo "准备发布的资产:"
           ls -la release-assets/
 
-      # 版本更新 + 发布到 npm（可选）
-      - name: 版本更新 & 发布
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          commit: "chore: version packages"
-          title: "chore: version packages"
-          version: pnpm ci:version
-          publish: pnpm ci:publish   # 这里会真正执行 npm publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
 
       # 创建 GitHub Release 并上传资产
       - name: 创建 GitHub Release
